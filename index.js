@@ -102,7 +102,7 @@ module.exports = function ({ types: t }) {
             
             // Try to get the variable name if this is assigned to a variable
             const parent = path.parent;
-            let componentName = 'AnonymousComponent';
+            let componentName = inferJSXNameFromBody(path.node.body) || 'element';
             
             if (t.isVariableDeclarator(parent) && parent.id?.name) {
               componentName = parent.id.name;
@@ -161,6 +161,50 @@ module.exports = function ({ types: t }) {
       }
     };
   };
+  
+  function jsxNameToString(nameNode) {
+    if (!nameNode) return null;
+    if (nameNode.type === 'JSXIdentifier') {
+      return nameNode.name;
+    }
+    if (nameNode.type === 'JSXMemberExpression') {
+      const objectName = jsxNameToString(nameNode.object);
+      const propertyName = jsxNameToString(nameNode.property);
+      if (objectName && propertyName) {
+        return objectName + '.' + propertyName;
+      }
+      return null;
+    }
+    if (nameNode.type === 'JSXNamespacedName') {
+      const ns = nameNode.namespace && nameNode.namespace.name;
+      const name = nameNode.name && nameNode.name.name;
+      if (ns && name) {
+        return ns + ':' + name;
+      }
+      return null;
+    }
+    return null;
+  }
+  
+  function inferJSXNameFromBody(bodyNode) {
+    if (!bodyNode) return null;
+    
+    if (bodyNode.type === 'JSXElement') {
+      return jsxNameToString(bodyNode.openingElement && bodyNode.openingElement.name);
+    }
+    if (bodyNode.type === 'JSXFragment') {
+      return 'Fragment';
+    }
+    if (bodyNode.type === 'BlockStatement') {
+      for (const stmt of bodyNode.body) {
+        if (stmt.type === 'ReturnStatement' && stmt.argument) {
+          const fromReturn = inferJSXNameFromBody(stmt.argument);
+          if (fromReturn) return fromReturn;
+        }
+      }
+    }
+    return null;
+  }
   
   function hasJSX(path) {
     let hasJSXElement = false;

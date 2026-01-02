@@ -6,7 +6,9 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
   window.__sourceSelectorInitialized = true;
   
   let isActive = false;
-  let highlightedElement = null;
+  let hoveredElement = null;
+  let overlayBlocker = null;
+  let overlayHighlight = null;
   
   function elementToString(element) {
     var tagName = element.tagName.toLowerCase();
@@ -55,105 +57,189 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
     });
   }
   
+  function findTaggedElement(startElement) {
+    let target = startElement;
+    let attempts = 0;
+    while (target && attempts < 10) {
+      const component = target.getAttribute && target.getAttribute('data-source-component');
+      const file = target.getAttribute && target.getAttribute('data-source-file');
+      const line = target.getAttribute && target.getAttribute('data-source-line');
+      if (component || file || line) {
+        return { target, component, file, line };
+      }
+      target = target.parentElement;
+      attempts++;
+    }
+    return null;
+  }
+  
+  function postSelectionMessage(payload) {
+    const messageData = {
+      type: 'SOURCE_SELECTED',
+      data: payload
+    };
+    if (window.parent && window.parent !== window) {
+      try {
+        window.parent.postMessage(messageData, '*');
+      } catch (err) {
+        // Silently fail cross-origin errors
+      }
+    }
+  }
+  
+  function setHighlight(target) {
+    if (!overlayHighlight) return;
+    if (!target) {
+      overlayHighlight.style.display = 'none';
+      return;
+    }
+    const rect = target.getBoundingClientRect();
+    overlayHighlight.style.display = 'block';
+    overlayHighlight.style.left = rect.left + 'px';
+    overlayHighlight.style.top = rect.top + 'px';
+    overlayHighlight.style.width = rect.width + 'px';
+    overlayHighlight.style.height = rect.height + 'px';
+  }
+  
+  function getUnderlyingElement(x, y) {
+    const prevBlockerPointer = overlayBlocker ? overlayBlocker.style.pointerEvents : null;
+    const prevBlockerVisibility = overlayBlocker ? overlayBlocker.style.visibility : null;
+    const prevHighlightVisibility = overlayHighlight ? overlayHighlight.style.visibility : null;
+    
+    if (overlayBlocker) {
+      overlayBlocker.style.pointerEvents = 'none';
+      overlayBlocker.style.visibility = 'hidden';
+    }
+    if (overlayHighlight) {
+      overlayHighlight.style.visibility = 'hidden';
+    }
+    
+    const element = document.elementFromPoint(x, y);
+    
+    if (overlayBlocker) {
+      overlayBlocker.style.pointerEvents = prevBlockerPointer || 'auto';
+      overlayBlocker.style.visibility = prevBlockerVisibility || 'visible';
+    }
+    if (overlayHighlight) {
+      overlayHighlight.style.visibility = prevHighlightVisibility || 'visible';
+    }
+    
+    return element;
+  }
+  
+  function handlePointerMove(event) {
+    if (!isActive) return;
+    const underlying = getUnderlyingElement(event.clientX, event.clientY);
+    if (!underlying || underlying === overlayBlocker || underlying === overlayHighlight) {
+      hoveredElement = null;
+      setHighlight(null);
+      return;
+    }
+    if (hoveredElement !== underlying) {
+      hoveredElement = underlying;
+      setHighlight(hoveredElement);
+    }
+  }
+  
+  function handleOverlayClick(event) {
+    if (!isActive) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.stopImmediatePropagation) {
+      event.stopImmediatePropagation();
+    }
+    
+    const underlying = getUnderlyingElement(event.clientX, event.clientY);
+    const tagged = underlying ? findTaggedElement(underlying) : null;
+    if (!tagged) {
+      return;
+    }
+    
+    loadHtmlToImage().then(function(htmlToImage) {
+      return htmlToImage.toPng(tagged.target, {
+        cacheBust: true,
+        pixelRatio: 1
+      });
+    }).then(function(dataUrl) {
+      postSelectionMessage({
+        component: tagged.component || 'unknown',
+        file: tagged.file || 'unknown',
+        line: tagged.line || 'unknown',
+        screenshot: dataUrl,
+        element: elementToString(tagged.target)
+      });
+    }).catch(function(err) {
+      postSelectionMessage({
+        component: tagged.component || 'unknown',
+        file: tagged.file || 'unknown',
+        line: tagged.line || 'unknown',
+        screenshot: null,
+        error: err.message || 'Unknown error',
+        element: elementToString(tagged.target)
+      });
+    }).finally(function() {
+      isActive = false;
+      cleanupOverlays();
+    });
+  }
+  
+  function createOverlays() {
+    if (overlayBlocker || overlayHighlight) return;
+    
+    overlayBlocker = document.createElement('div');
+    overlayBlocker.style.position = 'fixed';
+    overlayBlocker.style.inset = '0';
+    overlayBlocker.style.zIndex = '2147483646';
+    overlayBlocker.style.background = 'rgba(0,0,0,0)';
+    overlayBlocker.style.cursor = 'crosshair';
+    overlayBlocker.style.userSelect = 'none';
+    overlayBlocker.style.pointerEvents = 'auto';
+    
+    overlayHighlight = document.createElement('div');
+    overlayHighlight.style.position = 'fixed';
+    overlayHighlight.style.border = '2px solid #4d5fef';
+    overlayHighlight.style.boxSizing = 'border-box';
+    overlayHighlight.style.pointerEvents = 'none';
+    overlayHighlight.style.zIndex = '2147483647';
+    overlayHighlight.style.display = 'none';
+    
+    overlayBlocker.addEventListener('mousemove', handlePointerMove, true);
+    overlayBlocker.addEventListener('click', handleOverlayClick, true);
+    
+    document.body.appendChild(overlayBlocker);
+    document.body.appendChild(overlayHighlight);
+  }
+  
+  function cleanupOverlays() {
+    hoveredElement = null;
+    if (overlayBlocker) {
+      overlayBlocker.removeEventListener('mousemove', handlePointerMove, true);
+      overlayBlocker.removeEventListener('click', handleOverlayClick, true);
+      if (overlayBlocker.parentNode) {
+        overlayBlocker.parentNode.removeChild(overlayBlocker);
+      }
+      overlayBlocker = null;
+    }
+    if (overlayHighlight) {
+      if (overlayHighlight.parentNode) {
+        overlayHighlight.parentNode.removeChild(overlayHighlight);
+      }
+      overlayHighlight = null;
+    }
+  }
+  
   function initSelector() {
     window.__sourceSelectorReady = true;
     
     window.addEventListener('message', function(event) {
       if (event.data && event.data.type === 'ENABLE_SOURCE_SELECTOR') {
         isActive = true;
+        createOverlays();
       } else if (event.data && event.data.type === 'DISABLE_SOURCE_SELECTOR') {
         isActive = false;
-        if (highlightedElement) {
-          highlightedElement.style.outline = '';
-          highlightedElement = null;
-        }
+        cleanupOverlays();
       }
     });
-    
-    document.addEventListener('mouseover', function(e) {
-      if (!isActive) return;
-      if (highlightedElement && highlightedElement !== e.target) {
-        highlightedElement.style.outline = '';
-      }
-      e.target.style.outline = '2px solid #4d5fef';
-      e.target.style.outlineOffset = '2px';
-      highlightedElement = e.target;
-    }, true);
-    
-    document.addEventListener('click', function(e) {
-      if (!isActive) return;
-      
-      let target = e.target;
-      let attempts = 0;
-      while (target && attempts < 10) {
-        const component = target.getAttribute('data-source-component');
-        const file = target.getAttribute('data-source-file');
-        const line = target.getAttribute('data-source-line');
-        
-        if (component || file || line) {
-          e.preventDefault();
-          e.stopPropagation();
-          e.stopImmediatePropagation();
-          
-          loadHtmlToImage().then(function(htmlToImage) {
-            return htmlToImage.toPng(target, {
-              cacheBust: true,
-              pixelRatio: 1
-            });
-          }).then(function(dataUrl) {
-            const messageData = {
-              type: 'SOURCE_SELECTED',
-              data: {
-                component: component || 'unknown',
-                file: file || 'unknown',
-                line: line || 'unknown',
-                screenshot: dataUrl,
-                element: elementToString(target)
-              }
-            };
-            if (window.parent && window.parent !== window) {
-              try {
-                window.parent.postMessage(messageData, '*');
-              } catch (err) {
-                // Silently fail cross-origin errors
-              }
-            }
-            isActive = false;
-            if (highlightedElement) {
-              highlightedElement.style.outline = '';
-              highlightedElement = null;
-            }
-          }).catch(function(err) {
-            const messageData = {
-              type: 'SOURCE_SELECTED',
-              data: {
-                component: component || 'unknown',
-                file: file || 'unknown',
-                line: line || 'unknown',
-                screenshot: null,
-                error: err.message || 'Unknown error',
-                element: elementToString(target)
-              }
-            };
-            if (window.parent && window.parent !== window) {
-              try {
-                window.parent.postMessage(messageData, '*');
-              } catch (err) {
-                // Silently fail cross-origin errors
-              }
-            }
-            isActive = false;
-            if (highlightedElement) {
-              highlightedElement.style.outline = '';
-              highlightedElement = null;
-            }
-          });
-          return;
-        }
-        target = target.parentElement;
-        attempts++;
-      }
-    }, true);
   }
   
   // Initialize after DOM is ready
