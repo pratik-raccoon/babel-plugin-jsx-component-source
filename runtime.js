@@ -466,6 +466,15 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
     // Handle form submission
     form.addEventListener('submit', handleFormSubmit);
     
+    // Handle cmd+enter or ctrl+enter to submit
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleFormSubmit(new Event('submit'));
+      }
+    });
+    
     // Prevent ALL keyboard events from bubbling up to iframe's global listeners
     // But handle Escape key first before stopping propagation
     toolbar.addEventListener('keydown', (e) => {
