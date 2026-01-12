@@ -466,12 +466,11 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
     // Handle form submission
     form.addEventListener('submit', handleFormSubmit);
     
-    // Handle cmd+enter or ctrl+enter to submit
+    // Handle cmd+enter or ctrl+enter on input to submit
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        e.stopPropagation();
-        handleFormSubmit(new Event('submit'));
+        form.dispatchEvent(new Event('submit'));
       }
     });
     
