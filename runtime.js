@@ -465,8 +465,6 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
     
     // Handle form submission
     form.addEventListener('submit', handleFormSubmit);
-    
-    // Handle cmd+enter or ctrl+enter on input to submit
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
@@ -486,8 +484,6 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
         return;
       }
       
-      e.stopPropagation();
-      e.stopImmediatePropagation();
     }, true);
     
     toolbar.addEventListener('keyup', (e) => {
