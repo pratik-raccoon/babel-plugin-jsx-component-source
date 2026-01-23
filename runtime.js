@@ -367,16 +367,11 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
         addSelectionHighlight(tagged.target, tagged.raccoonId);
       }
     } else {
-      // Normal click: Add to selection and show toolbar
-      const existingIndex = selectedTaggedElements.findIndex(
-        el => el.raccoonId === tagged.raccoonId
-      );
-      
-      if (existingIndex === -1) {
-        selectedTaggedElements.push(tagged);
-        addSelectionHighlight(tagged.target, tagged.raccoonId);
-      }
-      
+      // Normal click: Clear previous selections and select only this element
+      clearAllSelectionHighlights();
+      selectedTaggedElements = [tagged];
+      addSelectionHighlight(tagged.target, tagged.raccoonId);
+
       isToolbarOpen = true;
       showToolbar(event.clientX, event.clientY);
     }
@@ -607,16 +602,29 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
     cleanupOverlays();
   }
   
-  function handleScrollResize() {
+  function handleScroll(event) {
+    // Ignore scroll events from inside the toolbar (e.g., input text overflow)
+    if (toolbar && toolbar.contains(event.target)) {
+      return;
+    }
+
     if (scrollRafId !== null) return;
 
     scrollRafId = requestAnimationFrame(() => {
-      updateSelectionHighlights();
-      // Close toolbar on scroll - user can click again to reopen
+      // Close toolbar and clear selections on scroll - user can click again to reselect
       if (isToolbarOpen) {
         hideToolbar();
       }
+      clearAllSelectionHighlights();
+      selectedTaggedElements = [];
       scrollRafId = null;
+    });
+  }
+
+  function handleResize() {
+    // Only update highlights on resize, don't close toolbar
+    requestAnimationFrame(() => {
+      updateSelectionHighlights();
     });
   }
   
@@ -644,9 +652,9 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
     overlayBlocker.addEventListener('mousemove', handlePointerMove, true);
     overlayBlocker.addEventListener('click', handleOverlayClick, true);
 
-    // Add scroll/resize handlers with RAF throttling
-    window.addEventListener('scroll', handleScrollResize, true);
-    window.addEventListener('resize', handleScrollResize);
+    // Add scroll/resize handlers
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('resize', handleResize);
 
     // Add document-level Escape handler
     document.addEventListener('keydown', handleDocumentKeydown, true);
@@ -665,8 +673,8 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
       cancelAnimationFrame(scrollRafId);
       scrollRafId = null;
     }
-    window.removeEventListener('scroll', handleScrollResize, true);
-    window.removeEventListener('resize', handleScrollResize);
+    window.removeEventListener('scroll', handleScroll, true);
+    window.removeEventListener('resize', handleResize);
 
     // Remove document-level Escape handler
     document.removeEventListener('keydown', handleDocumentKeydown, true);
