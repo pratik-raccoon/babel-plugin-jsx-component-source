@@ -290,7 +290,7 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
   }
   
   function handlePointerMove(event) {
-    if (!isActive || isToolbarOpen) return;
+    if (!isActive) return;
     
     const underlying = getUnderlyingElement(event.clientX, event.clientY);
     if (!underlying || underlying === overlayBlocker || underlying === overlayHighlight) {
@@ -320,12 +320,29 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
     }
   }
   
+  function hideToolbar() {
+    if (toolbar) {
+      const form = toolbar.querySelector('.raccoon-inspect-form');
+      if (form) {
+        form.removeEventListener('submit', handleFormSubmit);
+      }
+      toolbar.parentNode?.removeChild(toolbar);
+      toolbar = null;
+    }
+    isToolbarOpen = false;
+  }
+
   function handleOverlayClick(event) {
-    if (!isActive || isToolbarOpen) return;
-    
+    if (!isActive) return;
+
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation?.();
+
+    // If toolbar is open, close it and allow selecting new element
+    if (isToolbarOpen) {
+      hideToolbar();
+    }
     
     const underlying = getUnderlyingElement(event.clientX, event.clientY);
     const tagged = underlying ? findTaggedElement(underlying) : null;
@@ -592,16 +609,29 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
   
   function handleScrollResize() {
     if (scrollRafId !== null) return;
-    
+
     scrollRafId = requestAnimationFrame(() => {
       updateSelectionHighlights();
+      // Close toolbar on scroll - user can click again to reopen
+      if (isToolbarOpen) {
+        hideToolbar();
+      }
       scrollRafId = null;
     });
   }
   
+  function handleDocumentKeydown(event) {
+    if (!isActive) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      cancelSelection();
+    }
+  }
+
   function createOverlays() {
     if (overlayBlocker) return;
-    
+
     overlayBlocker = document.createElement('div');
     overlayBlocker.style.position = 'fixed';
     overlayBlocker.style.inset = '0';
@@ -610,14 +640,17 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
     overlayBlocker.style.cursor = 'crosshair';
     overlayBlocker.style.userSelect = 'none';
     overlayBlocker.style.pointerEvents = 'auto';
-    
+
     overlayBlocker.addEventListener('mousemove', handlePointerMove, true);
     overlayBlocker.addEventListener('click', handleOverlayClick, true);
-    
+
     // Add scroll/resize handlers with RAF throttling
     window.addEventListener('scroll', handleScrollResize, true);
     window.addEventListener('resize', handleScrollResize);
-    
+
+    // Add document-level Escape handler
+    document.addEventListener('keydown', handleDocumentKeydown, true);
+
     document.body.appendChild(overlayBlocker);
   }
   
@@ -626,7 +659,7 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
     selectedTaggedElements = [];
     clearAllSelectionHighlights();
     clearHoverHighlights();
-    
+
     // Remove scroll/resize handlers
     if (scrollRafId !== null) {
       cancelAnimationFrame(scrollRafId);
@@ -634,6 +667,9 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
     }
     window.removeEventListener('scroll', handleScrollResize, true);
     window.removeEventListener('resize', handleScrollResize);
+
+    // Remove document-level Escape handler
+    document.removeEventListener('keydown', handleDocumentKeydown, true);
     
     if (overlayBlocker) {
       overlayBlocker.removeEventListener('mousemove', handlePointerMove, true);
