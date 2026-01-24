@@ -28,14 +28,18 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
   const COLORS = {
     card: 'hsl(240, 6%, 12%)',
     border: 'hsl(240, 6%, 18%)',
-    muted: 'hsl(240, 5%, 20%)',
-    mutedForeground: 'hsl(240, 5%, 65%)',
-    accentForeground: 'hsl(0, 0%, 98%)',
+    borderSubtle: 'hsl(240, 6%, 15%)',
+    muted: 'hsl(240, 6%, 14%)',
+    mutedForeground: 'hsl(240, 5%, 55%)',
+    foreground: 'hsl(240, 5%, 80%)',
+    accentForeground: 'hsl(240, 5%, 93%)',
     primary: '#5d5fef',
     primaryLight: 'rgba(93, 95, 239, 0.15)',
     primaryMuted: 'rgba(93, 95, 239, 0.4)',
-    primaryDashed: 'rgba(93, 95, 239, 0.7)', // More visible dashed border
-    primaryHover: '#4a4cd4'
+    primaryDashed: 'rgba(93, 95, 239, 0.7)',
+    primaryHover: '#4a4cd4',
+    destructive: '#ef4444',
+    destructiveLight: 'rgba(239, 68, 68, 0.15)'
   };
   
   function elementToString(element) {
@@ -291,7 +295,14 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
   
   function handlePointerMove(event) {
     if (!isActive) return;
-    
+
+    // Don't show hover highlights when toolbar or input modal is open
+    if (isToolbarOpen) {
+      clearHoverHighlights();
+      hoveredElement = null;
+      return;
+    }
+
     const underlying = getUnderlyingElement(event.clientX, event.clientY);
     if (!underlying || underlying === overlayBlocker || underlying === overlayHighlight) {
       // Reset any previously hovered selected element
@@ -305,7 +316,7 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
       setHighlight(null);
       return;
     }
-    
+
     if (hoveredElement !== underlying) {
       // Reset previous hovered element if it was selected
       if (hoveredElement) {
@@ -314,7 +325,7 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
           updateSelectionHighlightStyle(prevTagged.raccoonId, false);
         }
       }
-      
+
       hoveredElement = underlying;
       setHighlight(hoveredElement);
     }
@@ -340,15 +351,22 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
     event.stopPropagation();
     event.stopImmediatePropagation?.();
 
+    // If input modal is open, just close it and return (don't select new element)
+    if (isInputMode) {
+      hideInputMode();
+      return;
+    }
+
+    // If toolbar is open, close it and proceed to select new element
     if (isToolbarOpen) {
       hideToolbar();
     }
-    
+
     const underlying = getUnderlyingElement(event.clientX, event.clientY);
     const tagged = underlying ? findTaggedElement(underlying) : null;
-    
+
     if (!tagged) return;
-    
+
     lastClickPosition = { x: event.clientX, y: event.clientY };
     
     if (event.shiftKey) {
@@ -378,26 +396,26 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
   }
   
   const ICONS = {
-    copy: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    copy: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
       <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
     </svg>`,
-    wand: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    wand: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/>
       <path d="M17.8 11.8 19 13"/><path d="M15 9h0"/><path d="M17.8 6.2 19 5"/>
       <path d="m3 21 9-9"/><path d="M12.2 6.2 11 5"/>
     </svg>`,
-    message: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    message: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>
     </svg>`,
-    send: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    send: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <line x1="22" y1="2" x2="11" y2="13"></line>
       <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
     </svg>`,
-    check: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    check: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <polyline points="20 6 9 17 4 12"/>
     </svg>`,
-    back: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    back: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>
     </svg>`
   };
@@ -410,7 +428,7 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
       .join('\n');
   }
 
-  function createToolbarButton(icon, title, onClick) {
+  function createToolbarButton(icon, title, onClick, isDestructive = false) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.innerHTML = icon;
@@ -419,19 +437,24 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      width: '32px',
-      height: '32px',
+      width: '28px',
+      height: '28px',
       border: 'none',
       background: 'transparent',
       color: COLORS.mutedForeground,
-      borderRadius: '6px',
+      borderRadius: '5px',
       cursor: 'pointer',
       transition: 'background 0.1s ease, color 0.1s ease'
     });
 
     btn.addEventListener('mouseenter', () => {
-      btn.style.background = COLORS.muted;
-      btn.style.color = COLORS.accentForeground;
+      if (isDestructive) {
+        btn.style.background = COLORS.destructiveLight;
+        btn.style.color = COLORS.destructive;
+      } else {
+        btn.style.background = COLORS.muted;
+        btn.style.color = COLORS.accentForeground;
+      }
     });
     btn.addEventListener('mouseleave', () => {
       if (!btn.dataset.active) {
@@ -440,16 +463,31 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
       }
     });
     btn.addEventListener('mousedown', () => {
-      btn.style.background = COLORS.primary;
-      btn.style.color = '#ffffff';
+      btn.style.background = COLORS.borderSubtle;
     });
     btn.addEventListener('mouseup', () => {
-      btn.style.background = COLORS.muted;
-      btn.style.color = COLORS.accentForeground;
+      if (isDestructive) {
+        btn.style.background = COLORS.destructiveLight;
+        btn.style.color = COLORS.destructive;
+      } else {
+        btn.style.background = COLORS.muted;
+        btn.style.color = COLORS.accentForeground;
+      }
     });
     btn.addEventListener('click', onClick);
 
     return btn;
+  }
+
+  function createSeparator() {
+    const sep = document.createElement('div');
+    Object.assign(sep.style, {
+      width: '1px',
+      height: '18px',
+      background: COLORS.borderSubtle,
+      margin: '0 3px'
+    });
+    return sep;
   }
 
   function copyToClipboard(text) {
@@ -535,29 +573,69 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
 
     Object.assign(inputModal.style, {
       position: 'fixed',
-      width: '300px',
+      width: '280px',
       maxWidth: 'calc(100vw - 40px)',
-      padding: '10px',
+      padding: '8px',
       background: COLORS.card,
       border: `1px solid ${COLORS.border}`,
-      borderRadius: '10px',
-      boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2)',
+      borderRadius: '8px',
+      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -2px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05)',
       zIndex: '2147483647',
       opacity: '0',
-      transform: 'scale(0.95)',
-      transition: 'opacity 0.15s ease, transform 0.15s ease',
+      transform: 'scale(0.98)',
+      transition: 'opacity 0.15s ease, transform 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
     });
+
+    // Header row with back button and title
+    const headerRow = document.createElement('div');
+    Object.assign(headerRow.style, {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '4px',
+      marginBottom: '6px'
+    });
+
+    // Back button
+    const backBtn = document.createElement('button');
+    backBtn.type = 'button';
+    backBtn.innerHTML = ICONS.back;
+    backBtn.title = 'Back to toolbar';
+    Object.assign(backBtn.style, {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '24px',
+      height: '24px',
+      border: 'none',
+      background: 'transparent',
+      color: COLORS.mutedForeground,
+      borderRadius: '4px',
+      cursor: 'pointer',
+      transition: 'background 0.1s ease, color 0.1s ease',
+      marginLeft: '-4px'
+    });
+    backBtn.addEventListener('mouseenter', () => {
+      backBtn.style.background = COLORS.muted;
+      backBtn.style.color = COLORS.accentForeground;
+    });
+    backBtn.addEventListener('mouseleave', () => {
+      backBtn.style.background = 'transparent';
+      backBtn.style.color = COLORS.mutedForeground;
+    });
+    backBtn.addEventListener('click', hideInputMode);
 
     // Title
     const title = document.createElement('div');
     title.textContent = 'Ask Agent';
     Object.assign(title.style, {
-      fontSize: '13px',
-      fontWeight: '600',
-      color: COLORS.accentForeground,
-      marginBottom: '8px'
+      fontSize: '11px',
+      fontWeight: '500',
+      color: COLORS.foreground
     });
+
+    headerRow.appendChild(backBtn);
+    headerRow.appendChild(title);
 
     // Textarea
     const textarea = document.createElement('textarea');
@@ -565,13 +643,13 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
     textarea.placeholder = 'Describe the changes you want to make...';
     Object.assign(textarea.style, {
       width: '100%',
-      height: '100px',
-      padding: '8px 10px',
-      border: `1px solid ${COLORS.border}`,
+      height: '80px',
+      padding: '8px',
+      border: `1px solid ${COLORS.borderSubtle}`,
       background: COLORS.muted,
       color: COLORS.accentForeground,
-      borderRadius: '6px',
-      fontSize: '13px',
+      borderRadius: '5px',
+      fontSize: '12px',
       lineHeight: '1.5',
       outline: 'none',
       resize: 'none',
@@ -583,7 +661,7 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
       textarea.style.borderColor = COLORS.primary;
     });
     textarea.addEventListener('blur', () => {
-      textarea.style.borderColor = COLORS.border;
+      textarea.style.borderColor = COLORS.borderSubtle;
     });
 
     // Buttons container
@@ -591,8 +669,8 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
     Object.assign(buttonsRow.style, {
       display: 'flex',
       justifyContent: 'flex-end',
-      gap: '6px',
-      marginTop: '8px'
+      gap: '4px',
+      marginTop: '6px'
     });
 
     // Cancel button
@@ -600,12 +678,12 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
     cancelBtn.type = 'button';
     cancelBtn.textContent = 'Cancel';
     Object.assign(cancelBtn.style, {
-      padding: '5px 12px',
-      border: `1px solid ${COLORS.border}`,
+      padding: '4px 10px',
+      border: 'none',
       background: 'transparent',
       color: COLORS.mutedForeground,
       borderRadius: '5px',
-      fontSize: '12px',
+      fontSize: '11px',
       fontWeight: '500',
       cursor: 'pointer',
       transition: 'all 0.1s ease'
@@ -625,12 +703,12 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
     sendBtn.type = 'button';
     sendBtn.textContent = 'Send';
     Object.assign(sendBtn.style, {
-      padding: '5px 12px',
+      padding: '4px 10px',
       border: 'none',
       background: COLORS.primary,
       color: '#ffffff',
       borderRadius: '5px',
-      fontSize: '12px',
+      fontSize: '11px',
       fontWeight: '500',
       cursor: 'pointer',
       transition: 'all 0.1s ease'
@@ -651,7 +729,7 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
     buttonsRow.appendChild(cancelBtn);
     buttonsRow.appendChild(sendBtn);
 
-    inputModal.appendChild(title);
+    inputModal.appendChild(headerRow);
     inputModal.appendChild(textarea);
     inputModal.appendChild(buttonsRow);
 
@@ -767,28 +845,25 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
     toolbar = document.createElement('div');
     toolbar.className = 'raccoon-inspect-toolbar';
 
-    const buttonsContainer = document.createElement('div');
-    buttonsContainer.className = 'toolbar-buttons';
-    Object.assign(buttonsContainer.style, {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '2px'
-    });
-
+    // Copy button
     const copyBtn = createToolbarButton(ICONS.copy, 'Copy element reference', handleCopyClick);
     copyBtn.dataset.action = 'copy';
 
+    // Separator between copy and action buttons
+    const separator = createSeparator();
+
+    // Re-imagine button
     const reimagineBtn = createToolbarButton(ICONS.wand, 'Re-imagine element', handleReimagineClick);
     reimagineBtn.dataset.action = 'reimagine';
 
+    // Ask button
     const askBtn = createToolbarButton(ICONS.message, 'Ask agent', handleAskClick);
     askBtn.dataset.action = 'ask';
 
-    buttonsContainer.appendChild(copyBtn);
-    buttonsContainer.appendChild(reimagineBtn);
-    buttonsContainer.appendChild(askBtn);
-
-    toolbar.appendChild(buttonsContainer);
+    toolbar.appendChild(copyBtn);
+    toolbar.appendChild(separator);
+    toolbar.appendChild(reimagineBtn);
+    toolbar.appendChild(askBtn);
 
     // Apply toolbar styles
     Object.assign(toolbar.style, {
