@@ -28,14 +28,18 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
   const COLORS = {
     card: 'hsl(240, 6%, 12%)',
     border: 'hsl(240, 6%, 18%)',
-    muted: 'hsl(240, 5%, 20%)',
-    mutedForeground: 'hsl(240, 5%, 65%)',
-    accentForeground: 'hsl(0, 0%, 98%)',
+    borderSubtle: 'hsl(240, 6%, 15%)',
+    muted: 'hsl(240, 6%, 14%)',
+    mutedForeground: 'hsl(240, 5%, 55%)',
+    foreground: 'hsl(240, 5%, 80%)',
+    accentForeground: 'hsl(240, 5%, 93%)',
     primary: '#5d5fef',
     primaryLight: 'rgba(93, 95, 239, 0.15)',
     primaryMuted: 'rgba(93, 95, 239, 0.4)',
-    primaryDashed: 'rgba(93, 95, 239, 0.7)', // More visible dashed border
-    primaryHover: '#4a4cd4'
+    primaryDashed: 'rgba(93, 95, 239, 0.7)',
+    primaryHover: '#4a4cd4',
+    destructive: '#ef4444',
+    destructiveLight: 'rgba(239, 68, 68, 0.15)'
   };
   
   function elementToString(element) {
@@ -290,8 +294,15 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
   }
   
   function handlePointerMove(event) {
-    if (!isActive || isToolbarOpen) return;
-    
+    if (!isActive) return;
+
+    // Don't show hover highlights when toolbar or input modal is open
+    if (isToolbarOpen) {
+      clearHoverHighlights();
+      hoveredElement = null;
+      return;
+    }
+
     const underlying = getUnderlyingElement(event.clientX, event.clientY);
     if (!underlying || underlying === overlayBlocker || underlying === overlayHighlight) {
       // Reset any previously hovered selected element
@@ -305,7 +316,7 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
       setHighlight(null);
       return;
     }
-    
+
     if (hoveredElement !== underlying) {
       // Reset previous hovered element if it was selected
       if (hoveredElement) {
@@ -314,24 +325,48 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
           updateSelectionHighlightStyle(prevTagged.raccoonId, false);
         }
       }
-      
+
       hoveredElement = underlying;
       setHighlight(hoveredElement);
     }
   }
   
+  function hideToolbar() {
+    if (toolbar) {
+      toolbar.parentNode?.removeChild(toolbar);
+      toolbar = null;
+    }
+    if (inputModal) {
+      inputModal.parentNode?.removeChild(inputModal);
+      inputModal = null;
+    }
+    isToolbarOpen = false;
+    isInputMode = false;
+  }
+
   function handleOverlayClick(event) {
-    if (!isActive || isToolbarOpen) return;
-    
+    if (!isActive) return;
+
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation?.();
-    
+
+    // If input modal is open, just close it and return (don't select new element)
+    if (isInputMode) {
+      hideInputMode();
+      return;
+    }
+
+    // If toolbar is open, close it and proceed to select new element
+    if (isToolbarOpen) {
+      hideToolbar();
+    }
+
     const underlying = getUnderlyingElement(event.clientX, event.clientY);
     const tagged = underlying ? findTaggedElement(underlying) : null;
-    
+
     if (!tagged) return;
-    
+
     lastClickPosition = { x: event.clientX, y: event.clientY };
     
     if (event.shiftKey) {
@@ -350,44 +385,487 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
         addSelectionHighlight(tagged.target, tagged.raccoonId);
       }
     } else {
-      // Normal click: Add to selection and show toolbar
-      const existingIndex = selectedTaggedElements.findIndex(
-        el => el.raccoonId === tagged.raccoonId
-      );
-      
-      if (existingIndex === -1) {
-        selectedTaggedElements.push(tagged);
-        addSelectionHighlight(tagged.target, tagged.raccoonId);
-      }
-      
+      // Normal click: Clear previous selections and select only this element
+      clearAllSelectionHighlights();
+      selectedTaggedElements = [tagged];
+      addSelectionHighlight(tagged.target, tagged.raccoonId);
+
       isToolbarOpen = true;
       showToolbar(event.clientX, event.clientY);
     }
   }
   
+  const ICONS = {
+    copy: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+    </svg>`,
+    wand: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/>
+      <path d="M17.8 11.8 19 13"/><path d="M15 9h0"/><path d="M17.8 6.2 19 5"/>
+      <path d="m3 21 9-9"/><path d="M12.2 6.2 11 5"/>
+    </svg>`,
+    message: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>
+    </svg>`,
+    send: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="22" y1="2" x2="11" y2="13"></line>
+      <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+    </svg>`,
+    check: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>`,
+    back: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>
+    </svg>`
+  };
+
+  let isInputMode = false;
+
+  function getElementsReferenceText() {
+    return selectedTaggedElements
+      .map((el) => `- Element: ${elementToString(el.target)}`)
+      .join('\n');
+  }
+
+  function createToolbarButton(icon, title, onClick, isDestructive = false) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.innerHTML = icon;
+    btn.title = title;
+    Object.assign(btn.style, {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '28px',
+      height: '28px',
+      border: 'none',
+      background: 'transparent',
+      color: COLORS.mutedForeground,
+      borderRadius: '5px',
+      cursor: 'pointer',
+      transition: 'background 0.1s ease, color 0.1s ease'
+    });
+
+    btn.addEventListener('mouseenter', () => {
+      if (isDestructive) {
+        btn.style.background = COLORS.destructiveLight;
+        btn.style.color = COLORS.destructive;
+      } else {
+        btn.style.background = COLORS.muted;
+        btn.style.color = COLORS.accentForeground;
+      }
+    });
+    btn.addEventListener('mouseleave', () => {
+      if (!btn.dataset.active) {
+        btn.style.background = 'transparent';
+        btn.style.color = COLORS.mutedForeground;
+      }
+    });
+    btn.addEventListener('mousedown', () => {
+      btn.style.background = COLORS.borderSubtle;
+    });
+    btn.addEventListener('mouseup', () => {
+      if (isDestructive) {
+        btn.style.background = COLORS.destructiveLight;
+        btn.style.color = COLORS.destructive;
+      } else {
+        btn.style.background = COLORS.muted;
+        btn.style.color = COLORS.accentForeground;
+      }
+    });
+    btn.addEventListener('click', onClick);
+
+    return btn;
+  }
+
+  function createSeparator() {
+    const sep = document.createElement('div');
+    Object.assign(sep.style, {
+      width: '1px',
+      height: '18px',
+      background: COLORS.borderSubtle,
+      margin: '0 3px'
+    });
+    return sep;
+  }
+
+  function copyToClipboard(text) {
+    // Fallback for iframes where Clipboard API is blocked
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    try {
+      document.execCommand('copy');
+      return true;
+    } catch (err) {
+      console.warn('[raccoon-inspect] Copy failed:', err);
+      return false;
+    } finally {
+      document.body.removeChild(textarea);
+    }
+  }
+
+  function handleCopyClick() {
+    const text = getElementsReferenceText();
+    const success = copyToClipboard(text);
+    if (success) {
+      const copyBtn = toolbar.querySelector('[data-action="copy"]');
+      if (copyBtn) {
+        copyBtn.innerHTML = ICONS.check;
+        copyBtn.style.color = '#22c55e';
+        setTimeout(() => {
+          copyBtn.innerHTML = ICONS.copy;
+          copyBtn.style.color = COLORS.mutedForeground;
+        }, 1500);
+      }
+    }
+  }
+
+  function handleReimagineClick() {
+    if (selectedTaggedElements.length === 0) return;
+
+    postSelectionMessage({
+      action: 'reimagine',
+      elements: selectedTaggedElements.map(tagged => ({
+        component: tagged.component || 'unknown',
+        file: tagged.file || 'unknown',
+        line: tagged.line || 'unknown',
+        raccoonId: tagged.raccoonId || 'unknown',
+        element: elementToString(tagged.target)
+      })),
+      query: 'Re-imagine this element with a fresh, modern design while keeping its functionality intact.'
+    });
+
+    isActive = false;
+    isToolbarOpen = false;
+    isInputMode = false;
+    selectedTaggedElements = [];
+    cleanupOverlays();
+  }
+
+  function handleAskClick() {
+    showInputMode();
+  }
+
+  let inputModal = null;
+
+  function showInputMode() {
+    isInputMode = true;
+
+    // Get toolbar position before hiding
+    const toolbarRect = toolbar ? toolbar.getBoundingClientRect() : null;
+
+    // Hide the toolbar
+    if (toolbar) {
+      toolbar.style.opacity = '0';
+      toolbar.style.pointerEvents = 'none';
+    }
+
+    // Create the input modal
+    inputModal = document.createElement('div');
+    inputModal.className = 'raccoon-inspect-modal';
+
+    Object.assign(inputModal.style, {
+      position: 'fixed',
+      width: '280px',
+      maxWidth: 'calc(100vw - 40px)',
+      padding: '8px',
+      background: COLORS.card,
+      border: `1px solid ${COLORS.border}`,
+      borderRadius: '8px',
+      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -2px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05)',
+      zIndex: '2147483647',
+      opacity: '0',
+      transform: 'scale(0.98)',
+      transition: 'opacity 0.15s ease, transform 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
+    });
+
+    // Header row with back button and title
+    const headerRow = document.createElement('div');
+    Object.assign(headerRow.style, {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '4px',
+      marginBottom: '6px'
+    });
+
+    // Back button
+    const backBtn = document.createElement('button');
+    backBtn.type = 'button';
+    backBtn.innerHTML = ICONS.back;
+    backBtn.title = 'Back to toolbar';
+    Object.assign(backBtn.style, {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '24px',
+      height: '24px',
+      border: 'none',
+      background: 'transparent',
+      color: COLORS.mutedForeground,
+      borderRadius: '4px',
+      cursor: 'pointer',
+      transition: 'background 0.1s ease, color 0.1s ease',
+      marginLeft: '-4px'
+    });
+    backBtn.addEventListener('mouseenter', () => {
+      backBtn.style.background = COLORS.muted;
+      backBtn.style.color = COLORS.accentForeground;
+    });
+    backBtn.addEventListener('mouseleave', () => {
+      backBtn.style.background = 'transparent';
+      backBtn.style.color = COLORS.mutedForeground;
+    });
+    backBtn.addEventListener('click', hideInputMode);
+
+    // Title
+    const title = document.createElement('div');
+    title.textContent = 'Ask Agent';
+    Object.assign(title.style, {
+      fontSize: '11px',
+      fontWeight: '500',
+      color: COLORS.foreground
+    });
+
+    headerRow.appendChild(backBtn);
+    headerRow.appendChild(title);
+
+    // Textarea
+    const textarea = document.createElement('textarea');
+    textarea.className = 'raccoon-inspect-textarea';
+    textarea.placeholder = 'Describe the changes you want to make...';
+    Object.assign(textarea.style, {
+      width: '100%',
+      height: '80px',
+      padding: '8px',
+      border: `1px solid ${COLORS.borderSubtle}`,
+      background: COLORS.muted,
+      color: COLORS.accentForeground,
+      borderRadius: '5px',
+      fontSize: '12px',
+      lineHeight: '1.5',
+      outline: 'none',
+      resize: 'none',
+      boxSizing: 'border-box',
+      fontFamily: 'inherit'
+    });
+
+    textarea.addEventListener('focus', () => {
+      textarea.style.borderColor = COLORS.primary;
+    });
+    textarea.addEventListener('blur', () => {
+      textarea.style.borderColor = COLORS.borderSubtle;
+    });
+
+    // Buttons container
+    const buttonsRow = document.createElement('div');
+    Object.assign(buttonsRow.style, {
+      display: 'flex',
+      justifyContent: 'flex-end',
+      gap: '4px',
+      marginTop: '6px'
+    });
+
+    // Cancel button
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = 'Cancel';
+    Object.assign(cancelBtn.style, {
+      padding: '4px 10px',
+      border: 'none',
+      background: 'transparent',
+      color: COLORS.mutedForeground,
+      borderRadius: '5px',
+      fontSize: '11px',
+      fontWeight: '500',
+      cursor: 'pointer',
+      transition: 'all 0.1s ease'
+    });
+    cancelBtn.addEventListener('mouseenter', () => {
+      cancelBtn.style.background = COLORS.muted;
+      cancelBtn.style.color = COLORS.accentForeground;
+    });
+    cancelBtn.addEventListener('mouseleave', () => {
+      cancelBtn.style.background = 'transparent';
+      cancelBtn.style.color = COLORS.mutedForeground;
+    });
+    cancelBtn.addEventListener('click', hideInputMode);
+
+    // Send button
+    const sendBtn = document.createElement('button');
+    sendBtn.type = 'button';
+    sendBtn.textContent = 'Send';
+    Object.assign(sendBtn.style, {
+      padding: '4px 10px',
+      border: 'none',
+      background: COLORS.primary,
+      color: '#ffffff',
+      borderRadius: '5px',
+      fontSize: '11px',
+      fontWeight: '500',
+      cursor: 'pointer',
+      transition: 'all 0.1s ease'
+    });
+    sendBtn.addEventListener('mouseenter', () => {
+      sendBtn.style.background = COLORS.primaryHover;
+    });
+    sendBtn.addEventListener('mouseleave', () => {
+      sendBtn.style.background = COLORS.primary;
+    });
+    sendBtn.addEventListener('click', () => {
+      const query = textarea.value.trim();
+      if (query) {
+        submitQuery(query);
+      }
+    });
+
+    buttonsRow.appendChild(cancelBtn);
+    buttonsRow.appendChild(sendBtn);
+
+    inputModal.appendChild(headerRow);
+    inputModal.appendChild(textarea);
+    inputModal.appendChild(buttonsRow);
+
+    // Handle keyboard
+    inputModal.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        hideInputMode();
+      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        const query = textarea.value.trim();
+        if (query) {
+          submitQuery(query);
+        }
+      }
+    }, true);
+
+    inputModal.addEventListener('keyup', (e) => {
+      e.stopPropagation();
+    }, true);
+
+    inputModal.addEventListener('keypress', (e) => {
+      e.stopPropagation();
+    }, true);
+
+    document.body.appendChild(inputModal);
+
+    // Position modal at toolbar location
+    const modalRect = inputModal.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    let left, top;
+
+    if (toolbarRect) {
+      // Position at the same location as toolbar
+      left = toolbarRect.left;
+      top = toolbarRect.top;
+    } else {
+      // Fallback to center
+      left = (viewportWidth - modalRect.width) / 2;
+      top = (viewportHeight - modalRect.height) / 2;
+    }
+
+    // Ensure modal stays within viewport
+    if (left + modalRect.width > viewportWidth - 10) {
+      left = viewportWidth - modalRect.width - 10;
+    }
+    if (left < 10) {
+      left = 10;
+    }
+    if (top + modalRect.height > viewportHeight - 10) {
+      top = viewportHeight - modalRect.height - 10;
+    }
+    if (top < 10) {
+      top = 10;
+    }
+
+    inputModal.style.left = `${left}px`;
+    inputModal.style.top = `${top}px`;
+
+    requestAnimationFrame(() => {
+      inputModal.style.opacity = '1';
+      inputModal.style.transform = 'scale(1)';
+      textarea.focus();
+    });
+  }
+
+  function hideInputMode() {
+    isInputMode = false;
+
+    if (inputModal) {
+      inputModal.style.opacity = '0';
+      inputModal.style.transform = 'scale(0.95)';
+      setTimeout(() => {
+        inputModal.parentNode?.removeChild(inputModal);
+        inputModal = null;
+      }, 150);
+    }
+
+    // Show the toolbar again
+    if (toolbar) {
+      toolbar.style.opacity = '1';
+      toolbar.style.pointerEvents = 'auto';
+    }
+  }
+
+  function submitQuery(query) {
+    if (selectedTaggedElements.length === 0) return;
+
+    postSelectionMessage({
+      elements: selectedTaggedElements.map(tagged => ({
+        component: tagged.component || 'unknown',
+        file: tagged.file || 'unknown',
+        line: tagged.line || 'unknown',
+        raccoonId: tagged.raccoonId || 'unknown',
+        element: elementToString(tagged.target)
+      })),
+      query: query
+    });
+
+    isActive = false;
+    isToolbarOpen = false;
+    isInputMode = false;
+    selectedTaggedElements = [];
+    cleanupOverlays();
+  }
+
   function showToolbar(x, y) {
     if (toolbar) return;
-    
+
     toolbar = document.createElement('div');
     toolbar.className = 'raccoon-inspect-toolbar';
-    toolbar.innerHTML = `
-      <form class="raccoon-inspect-form">
-        <input 
-          type="text" 
-          class="raccoon-inspect-input" 
-          placeholder="Ask agent to make changes..."
-          autocomplete="off"
-        />
-        <button type="submit" class="raccoon-inspect-submit">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="22" y1="2" x2="11" y2="13"></line>
-            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-          </svg>
-        </button>
-      </form>
-    `;
-    
-    // Apply styles
+
+    // Copy button
+    const copyBtn = createToolbarButton(ICONS.copy, 'Copy element reference', handleCopyClick);
+    copyBtn.dataset.action = 'copy';
+
+    // Separator between copy and action buttons
+    const separator = createSeparator();
+
+    // Re-imagine button
+    const reimagineBtn = createToolbarButton(ICONS.wand, 'Re-imagine element', handleReimagineClick);
+    reimagineBtn.dataset.action = 'reimagine';
+
+    // Ask button
+    const askBtn = createToolbarButton(ICONS.message, 'Ask agent', handleAskClick);
+    askBtn.dataset.action = 'ask';
+
+    toolbar.appendChild(copyBtn);
+    toolbar.appendChild(separator);
+    toolbar.appendChild(reimagineBtn);
+    toolbar.appendChild(askBtn);
+
+    // Apply toolbar styles
     Object.assign(toolbar.style, {
       position: 'fixed',
       display: 'flex',
@@ -405,77 +883,9 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
       transform: 'translateY(-2px) scale(0.98)',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
     });
-    
-    const form = toolbar.querySelector('.raccoon-inspect-form');
-    Object.assign(form.style, {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '4px',
-      margin: '0',
-      padding: '0'
-    });
-    
-    const input = toolbar.querySelector('.raccoon-inspect-input');
-    Object.assign(input.style, {
-      width: '220px',
-      maxWidth: 'calc(100vw - 80px)',
-      height: '28px',
-      padding: '0 10px',
-      border: 'none',
-      background: COLORS.muted,
-      color: COLORS.accentForeground,
-      borderRadius: '5px',
-      fontSize: '13px',
-      outline: 'none',
-      boxSizing: 'border-box'
-    });
-    
-    const submitBtn = toolbar.querySelector('.raccoon-inspect-submit');
-    Object.assign(submitBtn.style, {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      width: '28px',
-      height: '28px',
-      border: 'none',
-      background: 'transparent',
-      color: COLORS.mutedForeground,
-      borderRadius: '5px',
-      cursor: 'pointer',
-      transition: 'background 0.1s ease, color 0.1s ease'
-    });
-    
-    // Hover/active states for button
-    submitBtn.addEventListener('mouseenter', () => {
-      submitBtn.style.background = COLORS.muted;
-      submitBtn.style.color = COLORS.accentForeground;
-    });
-    submitBtn.addEventListener('mouseleave', () => {
-      submitBtn.style.background = 'transparent';
-      submitBtn.style.color = COLORS.mutedForeground;
-    });
-    submitBtn.addEventListener('mousedown', () => {
-      submitBtn.style.background = COLORS.primary;
-      submitBtn.style.color = '#ffffff';
-    });
-    submitBtn.addEventListener('mouseup', () => {
-      submitBtn.style.background = COLORS.muted;
-      submitBtn.style.color = COLORS.accentForeground;
-    });
-    
-    // Handle form submission
-    form.addEventListener('submit', handleFormSubmit);
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        form.dispatchEvent(new Event('submit'));
-      }
-    });
-    
-    // Prevent ALL keyboard events from bubbling up to iframe's global listeners
-    // But handle Escape key first before stopping propagation
+
+    // Prevent keyboard events from bubbling, but handle Escape
     toolbar.addEventListener('keydown', (e) => {
-      // Handle Escape key to cancel
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
@@ -483,92 +893,49 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
         cancelSelection();
         return;
       }
-      
     }, true);
-    
+
     toolbar.addEventListener('keyup', (e) => {
       e.stopPropagation();
       e.stopImmediatePropagation();
     }, true);
-    
+
     toolbar.addEventListener('keypress', (e) => {
       e.stopPropagation();
       e.stopImmediatePropagation();
     }, true);
-    
+
     document.body.appendChild(toolbar);
-    
+
     // Position toolbar near click, ensuring it stays within viewport
     const toolbarRect = toolbar.getBoundingClientRect();
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
-    
+
     let left = x + 10;
     let top = y + 10;
-    
-    // Adjust horizontal position if toolbar would overflow right edge
+
     if (left + toolbarRect.width > viewportWidth - 10) {
       left = x - toolbarRect.width - 10;
     }
-    // Adjust if still overflowing left
     if (left < 10) {
       left = 10;
     }
-    
-    // Adjust vertical position if toolbar would overflow bottom edge
     if (top + toolbarRect.height > viewportHeight - 10) {
       top = y - toolbarRect.height - 10;
     }
-    // Adjust if still overflowing top
     if (top < 10) {
       top = 10;
     }
-    
+
     toolbar.style.left = `${left}px`;
     toolbar.style.top = `${top}px`;
-    
+
     // Trigger visibility animation
     requestAnimationFrame(() => {
       toolbar.style.opacity = '1';
       toolbar.style.transform = 'translateY(0) scale(1)';
-      input.focus();
     });
-  }
-  
-  function handleFormSubmit(event) {
-    event.preventDefault();
-    event.stopPropagation();
-    
-    const input = toolbar?.querySelector('.raccoon-inspect-input');
-    const query = input?.value?.trim() || '';
-    
-    // Validate non-empty selection
-    if (selectedTaggedElements.length === 0) {
-      // Show visual feedback - shake animation
-      if (toolbar) {
-        toolbar.style.animation = 'shake 0.3s';
-        setTimeout(() => {
-          if (toolbar) toolbar.style.animation = '';
-        }, 300);
-      }
-      return;
-    }
-    
-    postSelectionMessage({
-      elements: selectedTaggedElements.map(tagged => ({
-        component: tagged.component || 'unknown',
-        file: tagged.file || 'unknown',
-        line: tagged.line || 'unknown',
-        raccoonId: tagged.raccoonId || 'unknown',
-        element: elementToString(tagged.target)
-      })),
-      query: query
-    });
-    
-    isActive = false;
-    isToolbarOpen = false;
-    selectedTaggedElements = [];
-    cleanupOverlays();
   }
   
   function cancelSelection() {
@@ -582,26 +949,61 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
         console.warn('[raccoon-inspect] Failed to post cancellation message:', err);
       }
     }
-    
+
     isActive = false;
     isToolbarOpen = false;
+    isInputMode = false;
     selectedTaggedElements = [];
     clearAllSelectionHighlights();
     cleanupOverlays();
   }
   
-  function handleScrollResize() {
+  function handleScroll(event) {
+    // Ignore scroll events from inside the toolbar or input modal
+    if (toolbar && toolbar.contains(event.target)) {
+      return;
+    }
+    if (inputModal && inputModal.contains(event.target)) {
+      return;
+    }
+
     if (scrollRafId !== null) return;
-    
+
     scrollRafId = requestAnimationFrame(() => {
-      updateSelectionHighlights();
+      // Close toolbar and clear selections on scroll - user can click again to reselect
+      if (isToolbarOpen) {
+        hideToolbar();
+      }
+      clearAllSelectionHighlights();
+      selectedTaggedElements = [];
       scrollRafId = null;
     });
   }
+
+  function handleResize() {
+    // Only update highlights on resize, don't close toolbar
+    requestAnimationFrame(() => {
+      updateSelectionHighlights();
+    });
+  }
   
+  function handleDocumentKeydown(event) {
+    if (!isActive) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      // If input modal is open, close it first (go back to toolbar)
+      if (isInputMode && inputModal) {
+        hideInputMode();
+      } else {
+        cancelSelection();
+      }
+    }
+  }
+
   function createOverlays() {
     if (overlayBlocker) return;
-    
+
     overlayBlocker = document.createElement('div');
     overlayBlocker.style.position = 'fixed';
     overlayBlocker.style.inset = '0';
@@ -610,14 +1012,17 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
     overlayBlocker.style.cursor = 'crosshair';
     overlayBlocker.style.userSelect = 'none';
     overlayBlocker.style.pointerEvents = 'auto';
-    
+
     overlayBlocker.addEventListener('mousemove', handlePointerMove, true);
     overlayBlocker.addEventListener('click', handleOverlayClick, true);
-    
-    // Add scroll/resize handlers with RAF throttling
-    window.addEventListener('scroll', handleScrollResize, true);
-    window.addEventListener('resize', handleScrollResize);
-    
+
+    // Add scroll/resize handlers
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('resize', handleResize);
+
+    // Add document-level Escape handler
+    document.addEventListener('keydown', handleDocumentKeydown, true);
+
     document.body.appendChild(overlayBlocker);
   }
   
@@ -626,14 +1031,17 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
     selectedTaggedElements = [];
     clearAllSelectionHighlights();
     clearHoverHighlights();
-    
+
     // Remove scroll/resize handlers
     if (scrollRafId !== null) {
       cancelAnimationFrame(scrollRafId);
       scrollRafId = null;
     }
-    window.removeEventListener('scroll', handleScrollResize, true);
-    window.removeEventListener('resize', handleScrollResize);
+    window.removeEventListener('scroll', handleScroll, true);
+    window.removeEventListener('resize', handleResize);
+
+    // Remove document-level Escape handler
+    document.removeEventListener('keydown', handleDocumentKeydown, true);
     
     if (overlayBlocker) {
       overlayBlocker.removeEventListener('mousemove', handlePointerMove, true);
@@ -643,15 +1051,16 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
     }
     
     if (toolbar) {
-      const form = toolbar.querySelector('.raccoon-inspect-form');
-      if (form) {
-        form.removeEventListener('submit', handleFormSubmit);
-      }
       toolbar.parentNode?.removeChild(toolbar);
       toolbar = null;
     }
+
+    if (inputModal) {
+      inputModal.parentNode?.removeChild(inputModal);
+      inputModal = null;
+    }
   }
-  
+
   function notifyParentReady() {
     if (window.parent && window.parent !== window) {
       try {
