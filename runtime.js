@@ -351,15 +351,20 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
     event.stopPropagation();
     event.stopImmediatePropagation?.();
 
-    // If input modal is open, just close it and return (don't select new element)
+    // If input modal is open, close both modal and toolbar
     if (isInputMode) {
-      hideInputMode();
+      hideToolbar();
+      clearAllSelectionHighlights();
+      selectedTaggedElements = [];
       return;
     }
 
-    // If toolbar is open, close it and proceed to select new element
+    // If toolbar is open, just close it (don't select new element)
     if (isToolbarOpen) {
       hideToolbar();
+      clearAllSelectionHighlights();
+      selectedTaggedElements = [];
+      return;
     }
 
     const underlying = getUnderlyingElement(event.clientX, event.clientY);
@@ -529,24 +534,7 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
 
   function handleReimagineClick() {
     if (selectedTaggedElements.length === 0) return;
-
-    postSelectionMessage({
-      action: 'reimagine',
-      elements: selectedTaggedElements.map(tagged => ({
-        component: tagged.component || 'unknown',
-        file: tagged.file || 'unknown',
-        line: tagged.line || 'unknown',
-        raccoonId: tagged.raccoonId || 'unknown',
-        element: elementToString(tagged.target)
-      })),
-      query: 'Re-imagine this element with a fresh, modern design while keeping its functionality intact.'
-    });
-
-    isActive = false;
-    isToolbarOpen = false;
-    isInputMode = false;
-    selectedTaggedElements = [];
-    cleanupOverlays();
+    showInputMode('Re-imagine this element.');
   }
 
   function handleAskClick() {
@@ -555,7 +543,7 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
 
   let inputModal = null;
 
-  function showInputMode() {
+  function showInputMode(prefill) {
     isInputMode = true;
 
     // Get toolbar position before hiding
@@ -791,6 +779,10 @@ if (typeof window !== 'undefined' && !window.__sourceSelectorInitialized) {
 
     inputModal.style.left = `${left}px`;
     inputModal.style.top = `${top}px`;
+
+    if (prefill) {
+      textarea.value = prefill;
+    }
 
     requestAnimationFrame(() => {
       inputModal.style.opacity = '1';
